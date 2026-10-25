@@ -1,0 +1,309 @@
+# THE BREAKING - iPhone engine + app shell, built by GitHub (lane ios-engine-1024, 10/24/2026).
+# Put this file in Martin's PUBLIC fork (github.com/mcantua/Ikemen-GO) as .github/workflows/the-breaking-ios.yml on branch develop.
+# Run: Actions tab > "the-breaking-ios" > Run workflow (green button). ~10-20 min. Result: artifact "the-breaking-ios-shell"
+# (zip with ikemen-go.ipa + BUILD-INFO.txt) = unsigned iPhone app WITHOUT the game files; the PC adds them (build_mobile.py).
+#
+# What it builds (nothing from this fork's own branch is used except this file):
+#   engine = upstream ikemen-engine/Ikemen-GO @ 05a2abef47574c64b37109debc29672b8fae4a60 (the engine the iPhone runs today, build 1417)
+#            + bw-ios-engine.patch (embedded below): BB-001 VS-screen freeze fix (font_vk.go glyph pages), BB-063 HUD flicker fix
+#            (Lua UI retention, system.go), the PC/Android audio peak control (sound.go/audio_sdl.go/audio_peak_control.go),
+#            bwdisplay (setGameResolution/bwDisplayInfo/getWindowSize for resolution_presets.lua R20: native pixels on both iPhone
+#            Duo screens) and the Vulkan/MoltenVK fold/unfold swapchain follower (bw_vk_follow.go).
+#   shell  = Jesuszilla/ikemen-ios @ 60606d640839ad72a20d3b45a5c7aa7939a446ce + apply_bw_ios_shell.py (embedded): BB-002 fast start, 0.5 s pad wait,
+#            file-sharing keys. Same bundle id as the installed app (ikemen-engine.I-K-E-M-E-N-Go): an update keeps saves.
+#   steps  = the same as upstream releases.yml's iOS job (macos-26, Xcode 26, Go 1.27, build/build.sh iOS, unsigned).
+# Bundle source + generator: D:\The Breaking Development\work\ios-engine-1024\src (make_workflow.py). Bundle sha256 is checked.
+name: the-breaking-ios
+on:
+  workflow_dispatch:
+    inputs:
+      bwdisplay:
+        description: "Live native resolution on fold/unfold (bwdisplay). Untick only if the lead asks."
+        type: boolean
+        default: true
+      follow_screen:
+        description: "Rebuild the picture size when the iPhone folds/unfolds. Untick only if the lead asks."
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Engine source (upstream Ikemen GO, pinned commit)
+        uses: actions/checkout@v7
+        with:
+          repository: ikemen-engine/Ikemen-GO
+          ref: 05a2abef47574c64b37109debc29672b8fae4a60
+          path: engine
+      - name: THE BREAKING patches (bundle embedded in this file, sha256 checked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bwb" && cd "$RUNNER_TEMP/bwb"
+          base64 -D > bundle.tgz <<'BWBUNDLE'
+          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
+          BWBUNDLE
+          echo "1817de7928c03a006d2cd130b445a668b97cfaf3185e55715c2759bbeb5b86ac  bundle.tgz" | shasum -a 256 -c -
+          tar xzf bundle.tgz
+          cd "$GITHUB_WORKSPACE/engine"
+          test "$(git rev-parse HEAD)" = "05a2abef47574c64b37109debc29672b8fae4a60"
+          git apply --check "$RUNNER_TEMP/bwb/bw/bw-ios-engine.patch"
+          git apply "$RUNNER_TEMP/bwb/bw/bw-ios-engine.patch"
+          grep -q 'BW ORDER 15 FIX 1 (BB-001)' src/font_vk.go
+          grep -q 'luaRememberFightDrawQueue' src/system.go
+          grep -q 'bwDrawableChanged' src/render_vk.go
+          if [ "${{ inputs.bwdisplay }}" = "false" ]; then sed -i '' 's/^var bwDisplayEnabled = "1"/var bwDisplayEnabled = "0"/' src/bw_display.go; fi
+          if [ "${{ inputs.follow_screen }}" = "false" ]; then sed -i '' 's/^var bwIOSFollow = "1"/var bwIOSFollow = "0"/' src/bw_vk_follow.go; fi
+          grep -n '^var bw' src/bw_display.go src/bw_vk_follow.go
+          git status --short
+      - name: App shell source (ikemen-ios, pinned commit) + THE BREAKING shell patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Jesuszilla/ikemen-ios.git "$GITHUB_WORKSPACE/ios-app"
+          cd "$GITHUB_WORKSPACE/ios-app"
+          git checkout --detach 60606d640839ad72a20d3b45a5c7aa7939a446ce
+          set +e; python3 "$RUNNER_TEMP/bwb/bw/apply_bw_ios_shell.py" --check .; rc=$?; set -e
+          test "$rc" = "3"
+          python3 "$RUNNER_TEMP/bwb/bw/apply_bw_ios_shell.py" .
+          python3 "$RUNNER_TEMP/bwb/bw/apply_bw_ios_shell.py" --check .
+          git status --short
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Host tools
+        shell: bash
+        run: |
+          export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1
+          brew update-reset || true
+          ( brew install --quiet pkg-config git nasm ) || ( unset HOMEBREW_NO_INSTALL_FROM_API; brew install --quiet pkg-config git nasm )
+          xcodebuild -version
+          go version
+      - name: Build engine library + app (unsigned)
+        shell: bash
+        working-directory: engine
+        env:
+          BUILD_FFMPEG: "yes"
+          GOOS: ios
+          GOARCH: arm64
+          CGO_ENABLED: "1"
+          GOEXPERIMENT: arenas
+          APP_VERSION: v1.0.0
+          APP_BUILDTIME: "2026.09.12"
+          IOS_WRAPPER_DIR: ${{ github.workspace }}/ios-app
+        run: |
+          set -euo pipefail
+          export IOS_BUILD_NUMBER=$((2000 + ${{ github.run_number }}))
+          go env -w GO111MODULE=on
+          go mod download
+          chmod +x build/build.sh
+          ./build/build.sh iOS
+          ls -la bin
+          test -f bin/libikemen.a
+          test -f bin/ikemen-go.ipa
+      - name: Check the app + write BUILD-INFO.txt
+        shell: bash
+        working-directory: engine
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/chk" && mkdir -p "$RUNNER_TEMP/chk" && cd "$RUNNER_TEMP/chk"
+          unzip -q "$GITHUB_WORKSPACE/engine/bin/ikemen-go.ipa"
+          APP=Payload/I.K.E.M.E.N-Go.app
+          test -f "$APP/I.K.E.M.E.N-Go"
+          test -f "$APP/DefaultAssets.zip"
+          /usr/libexec/PlistBuddy -c 'Print :BWShellPatch' "$APP/Info.plist" | grep -qx 'ios-engine-1024'
+          grep -c 'BWAssetsStamp' "$APP/I.K.E.M.E.N-Go"
+          grep -c 'bwdisplay: game area now' "$APP/I.K.E.M.E.N-Go"
+          grep -c 'rebuilding the swapchain' "$APP/I.K.E.M.E.N-Go"
+          lipo -info "$APP/I.K.E.M.E.N-Go"
+          {
+            echo "THE BREAKING iOS shell (lane ios-engine-1024) - GitHub Actions run ${{ github.run_id }} #${{ github.run_number }} attempt ${{ github.run_attempt }}"
+            echo "repository: ${{ github.repository }}  workflow sha: ${{ github.sha }}"
+            echo "engine: ikemen-engine/Ikemen-GO 05a2abef47574c64b37109debc29672b8fae4a60 + bw-ios-engine.patch $(shasum -a 256 "$RUNNER_TEMP/bwb/bw/bw-ios-engine.patch" | cut -d' ' -f1)"
+            echo "shell: Jesuszilla/ikemen-ios 60606d640839ad72a20d3b45a5c7aa7939a446ce + apply_bw_ios_shell.py $(shasum -a 256 "$RUNNER_TEMP/bwb/bw/apply_bw_ios_shell.py" | cut -d' ' -f1)"
+            echo "bundle: 1817de7928c03a006d2cd130b445a668b97cfaf3185e55715c2759bbeb5b86ac"
+            echo "inputs: bwdisplay=${{ inputs.bwdisplay }} follow_screen=${{ inputs.follow_screen }}"
+            echo "CFBundleIdentifier: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+            echo "CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")"
+            echo "MinimumOSVersion: $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
+            echo "xcode: $(xcodebuild -version | tr '\n' ' ')"
+            echo "go: $(go version)"
+            echo "ipa sha256: $(shasum -a 256 "$GITHUB_WORKSPACE/engine/bin/ikemen-go.ipa" | cut -d' ' -f1)"
+            echo "ipa bytes: $(stat -f %z "$GITHUB_WORKSPACE/engine/bin/ikemen-go.ipa")"
+          } > "$GITHUB_WORKSPACE/engine/bin/BUILD-INFO.txt"
+          cat "$GITHUB_WORKSPACE/engine/bin/BUILD-INFO.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: the-breaking-ios-shell
+          path: |
+            engine/bin/ikemen-go.ipa
+            engine/bin/BUILD-INFO.txt
+          retention-days: 30
+          if-no-files-found: error
